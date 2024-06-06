@@ -11,12 +11,12 @@ from urllib.parse import unquote
 from zhipuai import ZhipuAI
 
 import jieba
-wenxi_url = 'https://luckycola.com.cn/aliai/tyqw'
+
 
 # 基础URL
-base_url = "https://gr.xjtu.edu.cn"
+base_url = "http://bcbdi.siat.ac.cn"
 headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
 }
 infolist = []
 
@@ -179,174 +179,93 @@ def get_info(soup,info):
     return info
 
 
-def get_college_urls(keywords):
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
 
-    # college_urls = {}
-    # url = 'https://gr.xjtu.edu.cn/college-list'
-    # # 设置ChromeOptions # 忽略证书错
-    # chrome_options = Options()
-    # chrome_options.add_argument('--ignore-certificate-errors')
-
-    # # 启动Chrome浏览器
-    # driver = webdriver.Chrome()
-    #
-    # driver.get(url)
-    #
-    # # 找到所有学院的链接
-    # college_links = driver.find_elements_by_css_selector('a[href^="https://gr.xjtu.edu.cn/college-list?"]')
-    #
-    # # 循环点击每个学院链接，并获取完整的URL
-    # for link in college_links:
-    #     link.click()
-    #     # 等待页面加载
-    #     driver.implicitly_wait(5)
-    #     # 获取当前页面的URL
-    #     current_url = driver.current_url
-    #     # 提取学院名称作为键，完整URL作为值，添加到字典中
-    #     college_name = link.text
-    #     college_urls[college_name] = current_url
-    #     # 返回到学院列表页面
-    #     driver.back()
-    #
-    # # 关闭浏览器
-    # driver.quit()
-    #
-    # return college_urls
-
-    college_urls = {}
-    url = 'https://gr.xjtu.edu.cn/college-list'
+# 获取指定学院的教师信息
+def get_teacher_urls():
+    teachers_urls = {}
+    url = 'http://bcbdi.siat.ac.cn/index.php/member2/index.shtml#desc'
     response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser', from_encoding='utf-8')
     # 选择器：选择所有以'/web/'开头的链接
-    links = soup.select("a[href^='https://gr.xjtu.edu.cn/college-list?']")
+    links = soup.select("a[href*='/index.php/member2/showMember/nid']")
 
-    # 对列表中的每个元素进行分词
-    keywords_segments = [jieba.cut(word, cut_all=False) for word in list(keywords)]
-    # 将分词结果合并为一个列表
-    keywords_words = [word for segment in keywords_segments for word in segment]
-    # 过滤掉停用词
-    stopwords = [line.strip() for line in open("stopwords.txt", 'r', encoding='utf-8').readlines()]
-    keywords_words = [word for word in keywords_words if word not in stopwords]
-    # 词频统计
-    word_freq = {}
-    for word in keywords_words:
-        if word in word_freq:
-            word_freq[word] += 1
-        else:
-            word_freq[word] = 1
-    # 筛选出词频最高的三个关键词
-    top_keywords = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:3]
     for link in links:
-        college_name = link.get_text()
-
-        # 选出包含关键词的学院
-        if any(word in college_name for word in keywords_words):
+        name = link.get_text()
+        if name=="":
+            continue
+        elif name ==' Read more':
+            continue
+        else:
             # 解码URL
             link = unquote(link['href'])
             # 检查是否已经存在相同的学院名字
-            if college_name in college_urls:
+            if name in teachers_urls:
                 # 查找一个唯一的名字
                 counter = 2
-                new_college_name = f"{college_name} ({counter})"
-                while new_college_name in college_urls:
+                new_teachers_name = f"{name} ({counter})"
+                while new_teachers_name in teachers_urls:
                     counter += 1
-                    new_college_name = f"{college_name} ({counter})"
-                college_urls[new_college_name] = link
+                    new_teachers_name = f"{name} ({counter})"
+                teachers_urls[new_teachers_name] = link
             else:
-                college_urls[college_name] = link
+                teachers_urls[name] = link
 
-    return college_urls
-
-
-# 获取指定学院的教师信息
-def get_teacher_urls(college_urls):
-    teachers_urls = {}
-    for college_name, college_url in college_urls.items():
-        # 创建会话对象
-        session = requests.Session()
-        response = session.get(college_url, headers=headers)
-        # response = requests.get(college_url,headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        # 选择器：选择网页所有的教师页数
-        # 使用正则表达式匹配href属性中包含'cur='后跟数字的<a>标签
-        page_links = soup.find_all('a', href=re.compile(r'cur=\d+'))
-
-        # 用于跟踪已看到的cur值
-        seen_curs = set()
-        unique_page_links = []
-
-        for link in page_links:
-            # 提取cur值
-            match = re.search(r'cur=(\d+)', link['href'])
-            if match:
-                cur_value = match.group(1)
-                if cur_value not in seen_curs:
-                    seen_curs.add(cur_value)
-                    unique_page_links.append(link)
-
-        teachers_urls[college_name]=[]
-        # 遍历所有教师页数
-        for page_link in unique_page_links:
-            # 解码URL
-            page_link = unquote(page_link['href'])
-            # 请求教师页
-            headers1 = {
-                'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
-            }
-            # 请求教师页
-            response = session.get(page_link, headers=headers1)
-            # response = requests.get(page_link)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            links = soup.select("a[href^='/web/']")
-            teachers_urls[college_name].extend(links)
-            print(college_name, page_link)
-
-        # break
     return teachers_urls
 
 
 def get_teacher_info(teachers_urls):
 
-    for college_name, teachers in teachers_urls.items():
-        for teacher in teachers:
-            info = {
-                "学校": "",
-                "学院": "",
-                "姓名": "",
-                "职称": "",
-                "邮箱": "",
-                "招生专业": "",
-                "研究领域或研究方向": "",
-                "个人主页": ""
-            }
-            teacher_url = base_url + teacher['href']
-            response = requests.get(teacher_url, headers=headers)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                info["学校"] = get_college_name(soup)
-                info["学院"] = college_name
-                info["姓名"] = teacher.get_text()
-                info["个人主页"] = base_url + teacher['href']
-                infolist.append(get_info(soup,info))
 
-    return infolist
+    for teacher, url in teachers_urls.items()   :
+        info = {
+            "学校": "",
+            "学院": "",
+            "姓名": "",
+            "职称": "",
+            "邮箱": "",
+            "招生专业": "",
+            "研究领域或研究方向": "",
+            "个人主页": ""
+        }
+        teacher_url = base_url + url
+        response = requests.get(teacher_url, headers=headers)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            info["学校"] = ""
+            info["学院"] = ""
+            info["姓名"] = teacher
+            info["个人主页"] = teacher_url
+            result = []
+            email_patterns = [
+                r'邮箱[:：\s]*([\w\.-]+@[\w\.-]+)',  # 匹配 "邮箱：" 格式
+                r'<a href="mailto:([\w\.-]+@[\w\.-]+)">',  # 匹配 mailto 链接
+                r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' # 通用邮箱匹配
+            ]
+
+            for pattern in email_patterns:
+                emails = re.findall(pattern,soup.body.get_text())
+                for email in emails:
+                    if email not in result and email != 'bcbdi.hr@siat.ac.cn':
+                        result.append(email)
+
+            info["邮箱"] = " ".join(result)
+            print(info)
+            with open('teachers_info1.csv', mode='a', newline='', encoding='utf-8-sig') as file:
+                writer = csv.writer(file, quotechar='"', quoting=csv.QUOTE_MINIMAL)
+                writer.writerow([info["学校"], info["学院"], info["姓名"], info["职称"], info["招生专业"], info["邮箱"],
+                                 info["研究领域或研究方向"], info["个人主页"]])
+                file.close()
+
 # 主程序
 def main():
+    #
+    # with open('teachers_info1.csv', mode='a', newline='', encoding='utf-8-sig') as file:
+    #     writer = csv.writer(file, quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    #     writer.writerow(["学校", "学院", "姓名", "职称", "邮箱", "招生专业", "研究领域或研究方向", "个人主页"])
+    #     file.close()
 
-    with open('teachers_info.csv', mode='a', newline='', encoding='utf-8-sig') as file:
-        writer = csv.writer(file, quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(["学校", "学院", "姓名", "职称", "邮箱", "招生专业", "研究领域或研究方向", "个人主页"])
-        file.close()
-    # 读取JSON文件并提取关键词
-    json_file = 'config.json'
-    keywords = get_keywords_from_json(json_file)
-    colleges_urls = get_college_urls(keywords)
-    teachers_urls = get_teacher_urls(colleges_urls)
+
+    teachers_urls = get_teacher_urls()
     get_teacher_info(teachers_urls)
 
 
