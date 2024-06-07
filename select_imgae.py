@@ -56,7 +56,7 @@ def main():
         # 找到下一页按钮
         try:
             next_page = driver.find_element(By.LINK_TEXT, "下一页")
-        except NoSuchElementException:
+        except NoSuchElementException:# 没有下一页按钮
             next_page = None
         if next_page is None:
             break

@@ -1,9 +1,12 @@
 import os
 import time
 
-
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import NoSuchElementException,TimeoutException
+
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from pymongo import MongoClient
 
@@ -36,6 +39,8 @@ movies_info={
 }
 
 """
+
+
 def scrolled_to_bottom(driver):
     # 获取页面总高度
     last_height = driver.execute_script("return document.body.scrollHeight")
@@ -55,58 +60,83 @@ def scrolled_to_bottom(driver):
             break
         last_height = new_height
 
+
 def get_info(driver):
     movie_info = {}
     movie_info["电影"] = driver.find_element(By.CSS_SELECTOR, "#content > h1 > span").text
     movie_info["海报"] = driver.find_element(By.CSS_SELECTOR, "#mainpic > a > img").get_attribute('src').split('/')[-1]
     movie_info["导演"] = driver.find_element(By.CSS_SELECTOR, "#info > span:nth-child(1) > span.attrs").text
     movie_info["编剧"] = driver.find_element(By.CSS_SELECTOR, "#info > span:nth-child(3) > span.attrs").text
-    movie_info["主演"] = driver.find_element(By.CSS_SELECTOR, "#info > span:nth-child(5) > span.attrs > * > a").text
-    movie_info["类型"] = driver.find_element(By.CSS_SELECTOR, "#info > span:nth-child(8), #info > span:nth-child(9)").text
-    movie_info["制片国家/地区"] = driver.find_element(By.XPATH, "//span[contains(text(), '制片国家/地区')]").find_element(By.XPATH, "./following-sibling::text()")  # 获取相邻文本节点
-    movie_info["语言"] = driver.find_element(By.XPATH, "//span[contains(text(), '语言')]").find_element(By.XPATH, "./following-sibling::text()")
-    movie_info["上映日期"] = driver.find_element(By.CSS_SELECTOR, "#info > span:nth-child(16), #info > span:nth-child(17)").text
-    movie_info["片长"] = driver.find_element(By.CSS_SELECTOR, "#info > span:nth-child(20)").text
-    movie_info["又名"] = driver.find_element(By.XPATH, "//span[contains(text(), '又名')]").find_element(By.XPATH, "./following-sibling::text()")
-    movie_info["IMDb链接"] = driver.find_element(By.XPATH, "//span[contains(text(), 'IMDb')]").find_element(By.XPATH, "./following-sibling::text()")
-    movie_info["评分"] = driver.find_element(By.CSS_SELECTOR, "#interest_sectl > div.rating_wrap.clearbox > div.rating_self.clearfix > strong").text
-    movie_info["评价人数"] = driver.find_element(By.CSS_SELECTOR, "#interest_sectl > div.rating_wrap.clearbox > div.rating_self.clearfix > div > div.rating_sum > a > span").text
-    movie_info["简介"] = driver.find_element(By.CSS_SELECTOR, "#link-report-intra > span.short > span").text
+    movie_info["主演"] = "".join([driver.execute_script("return arguments[0].textContent", type) for type in
+                                  driver.find_elements(By.CSS_SELECTOR, "#info > span:nth-child(5) > span.attrs > * ")[
+                                  :-1]])
+    movie_info["类型"] = "/".join([type.text for type in driver.find_elements(By.CSS_SELECTOR, "[property='v:genre']")])
+    movie_info["制片国家/地区"] = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")[4].split(":")[-1]
+    movie_info["语言"] = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")[5].split(":")[-1]
+    movie_info["上映日期"] = "/".join(
+        [type.text for type in driver.find_elements(By.CSS_SELECTOR, "[property='v:initialReleaseDate']")])
+    movie_info["片长"] = driver.find_element(By.CSS_SELECTOR, "[property='v:runtime']").text
+    movie_info["又名"] = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")[8].split(":")[-1]
+    movie_info["IMDb链接"] = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")[9].split(":")[-1]
+    movie_info["评分"] = driver.find_element(By.CSS_SELECTOR, "[property='v:average']").text
+    movie_info["评价人数"] = driver.find_element(By.CSS_SELECTOR, "[property='v:votes']").text
+    movie_info["简介"] = driver.find_element(By.CSS_SELECTOR, "[property='v:summary']").text
     movie_info["豆瓣链接"] = driver.current_url
     collection.insert_one(movie_info)
-def get_movie_info(driver,movie_url):
+
+
+def get_movie_info(driver, movie_url):
     main_window_handle = driver.current_window_handle
     for url in movie_url:
         print(url.get_attribute('href'))
         url.click()
-        # 切换到新打开的标签页
-        driver.switch_to.window(driver.window_handles[-1])
-        time.sleep(2)
+        try:
+            # 切换到新打开的标签页
+            driver.switch_to.window(driver.window_handles[-1])
+            # 等待页面加载完成
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
+            # 检查URL是否被重定向
+            current_url = driver.current_url
+            if current_url != url.get_attribute('href'):
+                print(f"Page redirected to {current_url}.")
+                continue
+        except TimeoutException:
+            print("Loading took too much time!")
         get_info(driver)
         # 关闭新打开的标签页
         driver.close()
         # 切换回主标签页
         driver.switch_to.window(main_window_handle)
 
-def get_movie_url(driver,movie_type):
+
+def get_movie_url(driver, movie_type):
     for type in movie_type:
         print(type.get_attribute('href'))
         type.click()
         time.sleep(2)
         # scrolled_to_bottom(driver)
-        movie_url = driver.find_elements(By.CSS_SELECTOR, "#content > div > div.article > div.movie-list-panel.pictext > * > div > div > div.movie-name > span.movie-name-text > a")
-        get_movie_info(driver,movie_url)
+        movie_url = driver.find_elements(By.CSS_SELECTOR,"#content > div > div.article > div.movie-list-panel.pictext > * > div > div > div.movie-name > span.movie-name-text > a")
+        get_movie_info(driver, movie_url)
         driver.back()
 
+
 def main():
-    url ="https://movie.douban.com/chart"
+    url = "https://movie.douban.com/chart"
+
+    # 配置Chrome选项
+    # options = Options()
+    # options.add_argument('--disable-extensions')  # 禁用扩展
+    # options.add_argument('--disable-gpu')  # 禁用GPU
+    # options.add_argument('--no-sandbox')  # 禁用沙盒模式
+    # options.add_argument('--headless')  # 如果需要无头浏览器
     # 启动Chrome浏览器
     driver = webdriver.Chrome()
     driver.get(url)
 
     movie_type = driver.find_elements(By.CSS_SELECTOR, "a[href^='/typerank?type_name=']")
-    get_movie_url(driver,movie_type)
+    get_movie_url(driver, movie_type)
     input('等待回车键结束程序')
+
 
 if __name__ == '__main__':
     main()
