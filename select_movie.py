@@ -3,7 +3,7 @@ import time
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import NoSuchElementException,TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -11,7 +11,7 @@ from selenium.webdriver.common.by import By
 from pymongo import MongoClient
 
 # 连接MongoDB数据库
-client = MongoClient('mongodb://localhost:27017/')
+client = MongoClient('mongodb://192.168.1.10:27017/')
 
 # MongoDB 中可存在多个数据库，根据数据库名称获取数据库对象
 db = client.mydatabase
@@ -61,8 +61,22 @@ def scrolled_to_bottom(driver):
         last_height = new_height
 
 
+def tranInfodist(infos):
+    infos_dist = {}
+    for info in infos:
+        try:
+            if ":" in info:  # 处理中文冒号
+                key, value = info.split("：")
+            else:  # 处理英文冒：
+                key, value = info.split(":")
+            infos_dist[key.strip()] = value.strip()
+        except ValueError:
+            print("错误：{}字符串中没有冒号".format(info))
+    return infos_dist
 def get_info(driver):
     movie_info = {}
+    infos = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")
+    infos_dist = tranInfodist(infos)
     movie_info["电影"] = driver.find_element(By.CSS_SELECTOR, "#content > h1 > span").text
     movie_info["海报"] = driver.find_element(By.CSS_SELECTOR, "#mainpic > a > img").get_attribute('src').split('/')[-1]
     movie_info["导演"] = driver.find_element(By.CSS_SELECTOR, "#info > span:nth-child(1) > span.attrs").text
@@ -71,13 +85,12 @@ def get_info(driver):
                                   driver.find_elements(By.CSS_SELECTOR, "#info > span:nth-child(5) > span.attrs > * ")[
                                   :-1]])
     movie_info["类型"] = "/".join([type.text for type in driver.find_elements(By.CSS_SELECTOR, "[property='v:genre']")])
-    movie_info["制片国家/地区"] = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")[4].split(":")[-1]
-    movie_info["语言"] = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")[5].split(":")[-1]
-    movie_info["上映日期"] = "/".join(
-        [type.text for type in driver.find_elements(By.CSS_SELECTOR, "[property='v:initialReleaseDate']")])
-    movie_info["片长"] = driver.find_element(By.CSS_SELECTOR, "[property='v:runtime']").text
-    movie_info["又名"] = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")[8].split(":")[-1]
-    movie_info["IMDb链接"] = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")[9].split(":")[-1]
+    movie_info["制片国家/地区"] = infos_dist.get("制片国家/地区","")
+    movie_info["语言"] = infos_dist.get("语言", "")
+    movie_info["上映日期"] = infos_dist.get("上映日期", "")
+    movie_info["片长"] = infos_dist.get("片长", "")
+    movie_info["又名"] = infos_dist.get("又名", "")
+    movie_info["IMDb"] = infos_dist.get("IMDb", "")
     movie_info["评分"] = driver.find_element(By.CSS_SELECTOR, "[property='v:average']").text
     movie_info["评价人数"] = driver.find_element(By.CSS_SELECTOR, "[property='v:votes']").text
     movie_info["简介"] = driver.find_element(By.CSS_SELECTOR, "[property='v:summary']").text
@@ -88,20 +101,24 @@ def get_info(driver):
 def get_movie_info(driver, movie_url):
     main_window_handle = driver.current_window_handle
     for url in movie_url:
-        print(url.get_attribute('href'))
+        expected_url = url.get_attribute('href')
+        print(expected_url)
         url.click()
         try:
             # 切换到新打开的标签页
             driver.switch_to.window(driver.window_handles[-1])
             # 等待页面加载完成
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
+            WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, 'content')))
             # 检查URL是否被重定向
             current_url = driver.current_url
-            if current_url != url.get_attribute('href'):
+            if current_url != expected_url:
                 print(f"Page redirected to {current_url}.")
+                driver.close()
+                driver.switch_to.window(main_window_handle)
                 continue
         except TimeoutException:
-            print("Loading took too much time!")
+            print("Page loading timed out.")
+        # 获取电影信息
         get_info(driver)
         # 关闭新打开的标签页
         driver.close()
@@ -115,7 +132,8 @@ def get_movie_url(driver, movie_type):
         type.click()
         time.sleep(2)
         # scrolled_to_bottom(driver)
-        movie_url = driver.find_elements(By.CSS_SELECTOR,"#content > div > div.article > div.movie-list-panel.pictext > * > div > div > div.movie-name > span.movie-name-text > a")
+        movie_url = driver.find_elements(By.CSS_SELECTOR,
+                                         "#content > div > div.article > div.movie-list-panel.pictext > * > div > div > div.movie-name > span.movie-name-text > a")
         get_movie_info(driver, movie_url)
         driver.back()
 
