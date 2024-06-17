@@ -42,6 +42,7 @@ movies_info={
 
 
 def scrolled_to_bottom(driver):
+
     # 获取页面总高度
     last_height = driver.execute_script("return document.body.scrollHeight")
 
@@ -65,10 +66,10 @@ def tranInfodist(infos):
     infos_dist = {}
     for info in infos:
         try:
-            if ":" in info:  # 处理中文冒号
-                key, value = info.split("：")
-            else:  # 处理英文冒：
-                key, value = info.split(":")
+            # if "：" in info:  # 处理中文冒号
+            #     key, value = info.split("：",1)
+            # else:  # 处理英文冒：
+            key, value = info.split(":",1)
             infos_dist[key.strip()] = value.strip()
         except ValueError:
             print("错误：{}字符串中没有冒号".format(info))
@@ -77,13 +78,15 @@ def get_info(driver):
     movie_info = {}
     infos = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")
     infos_dist = tranInfodist(infos)
-    movie_info["电影"] = driver.find_element(By.CSS_SELECTOR, "#content > h1 > span").text
-    movie_info["海报"] = driver.find_element(By.CSS_SELECTOR, "#mainpic > a > img").get_attribute('src').split('/')[-1]
-    movie_info["导演"] = driver.find_element(By.CSS_SELECTOR, "#info > span:nth-child(1) > span.attrs").text
-    movie_info["编剧"] = driver.find_element(By.CSS_SELECTOR, "#info > span:nth-child(3) > span.attrs").text
-    movie_info["主演"] = "".join([driver.execute_script("return arguments[0].textContent", type) for type in
+    if "主演" in infos_dist:
+        movie_info["主演"] = "".join([driver.execute_script("return arguments[0].textContent", type) for type in
                                   driver.find_elements(By.CSS_SELECTOR, "#info > span:nth-child(5) > span.attrs > * ")[
                                   :-1]])
+    movie_info["电影"] = driver.find_element(By.CSS_SELECTOR, "#content > h1 > span").text
+    movie_info["海报"] = driver.find_element(By.CSS_SELECTOR, "#mainpic > a > img").get_attribute('src').split('/')[-1]
+    movie_info["导演"] = infos_dist.get("导演", "")
+    movie_info["编剧"] = infos_dist.get("编剧", "")
+    movie_info["主演"] = infos_dist.get("主演", "")
     movie_info["类型"] = "/".join([type.text for type in driver.find_elements(By.CSS_SELECTOR, "[property='v:genre']")])
     movie_info["制片国家/地区"] = infos_dist.get("制片国家/地区","")
     movie_info["语言"] = infos_dist.get("语言", "")
@@ -137,6 +140,30 @@ def get_movie_url(driver, movie_type):
         get_movie_info(driver, movie_url)
         driver.back()
 
+def login(driver):
+    login_url = driver.find_element(By.CLASS_NAME, "nav-login")
+    login_url.click()
+    try:
+        # 等待页面加载完成
+        WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "account-tab-account")))
+        password_login = driver.find_element(By.CLASS_NAME,"account-tab-account")
+        password_login.click()
+        # 输入用户名密码
+        username = driver.find_element(By.ID, "username")
+        password = driver.find_element(By.ID, "password")
+        username.send_keys("15926159067")
+        password.send_keys("123456789cr")
+        # 点击登录按钮
+        login_button = driver.find_element(By.CSS_SELECTOR, "#account > div.login-wrap > div.login-right > div > div.account-tabcon-start > div.account-form > div.account-form-field-submit > a")
+        login_button.click()
+        # 等待页面加载完成
+        WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "nav-login")))
+        # 关闭新打开的标签页
+        driver.close()
+        # 切换回主标签页
+        driver.switch_to.window(driver.window_handles[0])
+    except TimeoutException:
+        print("Page loading timed out.")
 
 def main():
     url = "https://movie.douban.com/chart"
@@ -150,7 +177,7 @@ def main():
     # 启动Chrome浏览器
     driver = webdriver.Chrome()
     driver.get(url)
-
+    login(driver)
     movie_type = driver.find_elements(By.CSS_SELECTOR, "a[href^='/typerank?type_name=']")
     get_movie_url(driver, movie_type)
     input('等待回车键结束程序')
