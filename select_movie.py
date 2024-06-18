@@ -1,7 +1,11 @@
+import re
 import os
+import cv2
 import time
 
+import requests
 from selenium import webdriver
+from selenium.webdriver import ActionChains
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 
@@ -9,6 +13,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from pymongo import MongoClient
+
+from function import get_slider_captcha_contour
 
 # 连接MongoDB数据库
 client = MongoClient('mongodb://192.168.1.10:27017/')
@@ -140,44 +146,81 @@ def get_movie_url(driver, movie_type):
         get_movie_info(driver, movie_url)
         driver.back()
 
+
+def find_slider_gap(background_path, block_path):
+    # 使用OpenCV加载图片
+    background = cv2.imread(background_path, 0)
+    block = cv2.imread(block_path, 0)
+
+    # 使用OpenCV模板匹配找到滑块在背景中的位置
+    result = cv2.matchTemplate(background, block, cv2.TM_CCOEFF_NORMED)
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+
+    # 返回滑块的位置信息
+    return max_loc[0]
+
 def login(driver):
     login_url = driver.find_element(By.CLASS_NAME, "nav-login")
     login_url.click()
-    try:
-        # 等待页面加载完成
-        WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "account-tab-account")))
-        password_login = driver.find_element(By.CLASS_NAME,"account-tab-account")
-        password_login.click()
-        # 输入用户名密码
-        username = driver.find_element(By.ID, "username")
-        password = driver.find_element(By.ID, "password")
-        username.send_keys("15926159067")
-        password.send_keys("123456789cr")
-        # 点击登录按钮
-        login_button = driver.find_element(By.CSS_SELECTOR, "#account > div.login-wrap > div.login-right > div > div.account-tabcon-start > div.account-form > div.account-form-field-submit > a")
-        login_button.click()
-        # 等待页面加载完成
-        WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "nav-login")))
-        # 关闭新打开的标签页
-        driver.close()
-        # 切换回主标签页
-        driver.switch_to.window(driver.window_handles[0])
-    except TimeoutException:
-        print("Page loading timed out.")
+    # 等待页面加载完成
+    WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "account-tab-account")))
+    password_login = driver.find_element(By.CLASS_NAME,"account-tab-account")
+    password_login.click()
+    # 输入用户名密码
+    username = driver.find_element(By.ID, "username")
+    password = driver.find_element(By.ID, "password")
+    username.send_keys("15926159067")
+    password.send_keys("123456789cr")
+    # 点击登录按钮
+    login_button = driver.find_element(By.CSS_SELECTOR, "#account > div.login-wrap > div.login-right > div > div.account-tabcon-start > div.account-form > div.account-form-field-submit > a")
+    login_button.click()
+    # 等待页面加载完成
+    frame = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, "tcaptcha_iframe_dy")))
+    driver.switch_to.frame(frame)
+
+    img = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, "slideBg")))
+    # 获取元素的style属性
+    style = img.get_attribute("style")
+    if not style:
+        time.sleep(0.5)  # 等待 0.5 秒后重试
+        style = img.get_attribute("style")
+
+    # 从style属性中提取背景图片的URL
+    img_url = style.split('url("')[1].split('")')[0]
+    # 下载验证码图片
+    img_data = requests.get(img_url).content
+    with open("captcha.jpg", "wb") as f:
+        f.write(img_data)
+
+    # 计算滑块的位置
+    x,_ = get_slider_captcha_contour("captcha.jpg")
+    slider = driver.find_element(By.CLASS_NAME, "tc-slider-normal")
+    ActionChains(driver).drag_and_drop_by_offset(slider, x/2-27, 0).perform()
+    slider.click()
+
+    # cookies = driver.get_cookies()
+    # cookie=''.join([f"{cookie['name']}={cookie['value']};" for cookie in cookies])
+    # print(cookie)
+
+    # 关闭新打开的标签页
+    driver.close()
+    # 切换回主标签页
+    driver.switch_to.window(driver.window_handles[0])
+
 
 def main():
     url = "https://movie.douban.com/chart"
 
     # 配置Chrome选项
-    # options = Options()
+    options = Options()
     # options.add_argument('--disable-extensions')  # 禁用扩展
     # options.add_argument('--disable-gpu')  # 禁用GPU
     # options.add_argument('--no-sandbox')  # 禁用沙盒模式
-    # options.add_argument('--headless')  # 如果需要无头浏览器
+    options.add_argument('--headless')  # 如果需要无头浏览器
     # 启动Chrome浏览器
-    driver = webdriver.Chrome()
+    driver = webdriver.Chrome(chrome_options=options)
     driver.get(url)
-    login(driver)
+    # login(driver)
     movie_type = driver.find_elements(By.CSS_SELECTOR, "a[href^='/typerank?type_name=']")
     get_movie_url(driver, movie_type)
     input('等待回车键结束程序')
