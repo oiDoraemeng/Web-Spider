@@ -216,11 +216,11 @@ def main():
     # options.add_argument('--disable-extensions')  # 禁用扩展
     # options.add_argument('--disable-gpu')  # 禁用GPU
     # options.add_argument('--no-sandbox')  # 禁用沙盒模式
-    options.add_argument('--headless')  # 如果需要无头浏览器
+    # options.add_argument('--headless')  # 如果需要无头浏览器
     # 启动Chrome浏览器
     driver = webdriver.Chrome(chrome_options=options)
     driver.get(url)
-    # login(driver)
+    login(driver)
     movie_type = driver.find_elements(By.CSS_SELECTOR, "a[href^='/typerank?type_name=']")
     get_movie_url(driver, movie_type)
     input('等待回车键结束程序')

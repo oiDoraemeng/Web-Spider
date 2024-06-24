@@ -22,6 +22,6 @@ def get_slider_captcha_contour(image_path):
     return x, output_image_path
 
 # 调用函数
-x, output_image_path = get_slider_captcha_contour("captcha.jpg")
-print(x)
-print(output_image_path)
+# x, output_image_path = get_slider_captcha_contour("captcha.jpg")
+# print(x)
+# print(output_image_path)
