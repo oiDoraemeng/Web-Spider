@@ -1,3 +1,4 @@
+import random
 import re
 import os
 import cv2
@@ -15,6 +16,25 @@ from selenium.webdriver.common.by import By
 from pymongo import MongoClient
 
 from function import get_slider_captcha_contour
+
+ip_url = "http://api.shenlongip.com/ip"
+response = requests.get(ip_url)
+
+iplist = []
+with open("ip.txt") as f:
+    iplist = f.readlines()
+
+
+# 获取ip代理
+def getip():
+    proxy = iplist[random.randint(0, len(iplist) - 1)]
+    proxy = proxy.strip()  # 去除换行符和空格
+    # proxies={
+    #     'http':'http://'+str(proxy),
+    #     #'https':'https://'+str(proxy),
+    # }
+    return proxy
+
 
 # 连接MongoDB数据库
 client = MongoClient('mongodb://192.168.1.10:27017/')
@@ -48,7 +68,6 @@ movies_info={
 
 
 def scrolled_to_bottom(driver):
-
     # 获取页面总高度
     last_height = driver.execute_script("return document.body.scrollHeight")
 
@@ -75,26 +94,29 @@ def tranInfodist(infos):
             # if "：" in info:  # 处理中文冒号
             #     key, value = info.split("：",1)
             # else:  # 处理英文冒：
-            key, value = info.split(":",1)
+            key, value = info.split(":", 1)
             infos_dist[key.strip()] = value.strip()
         except ValueError:
             print("错误：{}字符串中没有冒号".format(info))
     return infos_dist
+
+
 def get_info(driver):
     movie_info = {}
     infos = driver.find_element(By.CSS_SELECTOR, "#info").text.split("\n")
     infos_dist = tranInfodist(infos)
     if "主演" in infos_dist:
         movie_info["主演"] = "".join([driver.execute_script("return arguments[0].textContent", type) for type in
-                                  driver.find_elements(By.CSS_SELECTOR, "#info > span:nth-child(5) > span.attrs > * ")[
-                                  :-1]])
+                                      driver.find_elements(By.CSS_SELECTOR,
+                                                           "#info > span:nth-child(5) > span.attrs > * ")[
+                                      :-1]])
     movie_info["电影"] = driver.find_element(By.CSS_SELECTOR, "#content > h1 > span").text
     movie_info["海报"] = driver.find_element(By.CSS_SELECTOR, "#mainpic > a > img").get_attribute('src').split('/')[-1]
     movie_info["导演"] = infos_dist.get("导演", "")
     movie_info["编剧"] = infos_dist.get("编剧", "")
     movie_info["主演"] = infos_dist.get("主演", "")
     movie_info["类型"] = "/".join([type.text for type in driver.find_elements(By.CSS_SELECTOR, "[property='v:genre']")])
-    movie_info["制片国家/地区"] = infos_dist.get("制片国家/地区","")
+    movie_info["制片国家/地区"] = infos_dist.get("制片国家/地区", "")
     movie_info["语言"] = infos_dist.get("语言", "")
     movie_info["上映日期"] = infos_dist.get("上映日期", "")
     movie_info["片长"] = infos_dist.get("片长", "")
@@ -159,22 +181,20 @@ def find_slider_gap(background_path, block_path):
     # 返回滑块的位置信息
     return max_loc[0]
 
+
 def login(driver):
     login_url = driver.find_element(By.CLASS_NAME, "nav-login")
     login_url.click()
-    # 等待页面加载完成
-    WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, "account-tab-account")))
-    password_login = driver.find_element(By.CLASS_NAME,"account-tab-account")
-    password_login.click()
-    # 输入用户名密码
-    username = driver.find_element(By.ID, "username")
-    password = driver.find_element(By.ID, "password")
-    username.send_keys("15926159067")
-    password.send_keys("123456789cr")
-    # 点击登录按钮
-    login_button = driver.find_element(By.CSS_SELECTOR, "#account > div.login-wrap > div.login-right > div > div.account-tabcon-start > div.account-form > div.account-form-field-submit > a")
-    login_button.click()
-    # 等待页面加载完成
+    # 短信验证
+    phone_input = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, "//input[@type='phone']")))
+    phone_input.send_keys("15926159067")
+
+    # 获取验证码
+    get_captcha_button = WebDriverWait(driver, 5).until(
+        EC.presence_of_element_located((By.CLASS_NAME, "account-form-field-code")))
+    get_captcha_button.click()
+
+    # 等待验证码图片加载完成
     frame = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, "tcaptcha_iframe_dy")))
     driver.switch_to.frame(frame)
 
@@ -193,10 +213,18 @@ def login(driver):
         f.write(img_data)
 
     # 计算滑块的位置
-    x,_ = get_slider_captcha_contour("captcha.jpg")
+    x, _ = get_slider_captcha_contour("captcha.jpg")
     slider = driver.find_element(By.CLASS_NAME, "tc-slider-normal")
-    ActionChains(driver).drag_and_drop_by_offset(slider, x/2-27, 0).perform()
-    slider.click()
+    ActionChains(driver).drag_and_drop_by_offset(slider, x / 2 - 30, 0).perform()
+
+    captcha = input("请输入验证码：")
+    captcha_input = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, "code")))
+    captcha_input.send_keys(captcha)
+
+    # 点击登录按钮
+    login_button = driver.find_element(By.CSS_SELECTOR,
+                                       "#account > div.login-wrap > div.login-right > div > div.account-tabcon-start > div.account-form > div.account-form-field-submit > a")
+    login_button.click()
 
     # cookies = driver.get_cookies()
     # cookie=''.join([f"{cookie['name']}={cookie['value']};" for cookie in cookies])
@@ -217,6 +245,18 @@ def main():
     # options.add_argument('--disable-gpu')  # 禁用GPU
     # options.add_argument('--no-sandbox')  # 禁用沙盒模式
     # options.add_argument('--headless')  # 如果需要无头浏览器
+
+    # 添加请求头
+    options.add_argument(
+        'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36')
+
+    # 获取代理IP
+    proxy_ip = getip()
+    print(f"Using proxy: {proxy_ip}")
+
+    # 配置代理
+    options.add_argument('--proxy-server=http://' + proxy_ip)
+
     # 启动Chrome浏览器
     driver = webdriver.Chrome(chrome_options=options)
     driver.get(url)
