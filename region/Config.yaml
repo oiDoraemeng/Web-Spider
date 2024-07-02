@@ -1,0 +1,40 @@
+#基础配置
+base:
+  sys_name: '湘西公司“电小美”平台' #系统名称
+  version: '2.0'
+  environment: dev #运行环境配置,参考值:dev,pro
+  host: 0.0.0.0 # 绑定ip地址
+  port: 15201 #运行端口
+
+
+#上传路径配置
+upload:
+  base-upload: 'D:/gxy/upload/' #基础上传位置
+
+#mongodb配置
+mongodb:
+  host: 192.168.1.9 #mongodb地址
+  port: 27017 #mongodb端口
+  database: test_crud #项目数据库名称
+  username: '' #当前数据库的用户名
+  password: '' #数据库的连接密码
+
+#系统超级用户配置,最高权限,切勿泄露
+root:
+  username: 'admin' #用户名
+  pwd: 'admin123' #密码
+
+
+#redis配置
+redis:
+  host: 127.0.0.1 # Redis地址
+  port: 6379 # redis端口
+  database: 0 # 数据库编号
+  password: '' # 数据库密码
+
+#日志配置
+log:
+  filepath: D:/log  # 日志文件夹
+  prefix_name: test_crud # 日志文件前缀
+  level: error # 记录日志等级
+  filesize: 100 #日志文件大小,单位MB

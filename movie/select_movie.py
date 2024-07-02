@@ -17,27 +17,30 @@ from pymongo import MongoClient
 
 from function import get_slider_captcha_contour
 
-ip_url = "http://api.shenlongip.com/ip"
+# 获取代理IP
+ip_url = "http://api.shenlongip.com/ip?key=d9thmms4&pattern=txt&count=1&mr=1&protocol=1&sign=7234adf2be22e5b8be06c471d2b68026"
 response = requests.get(ip_url)
+proxy = response.text
+proxy = proxy.strip()  # 去除换行符和空格
 
-iplist = []
-with open("ip.txt") as f:
-    iplist = f.readlines()
-
-
-# 获取ip代理
-def getip():
-    proxy = iplist[random.randint(0, len(iplist) - 1)]
-    proxy = proxy.strip()  # 去除换行符和空格
-    # proxies={
-    #     'http':'http://'+str(proxy),
-    #     #'https':'https://'+str(proxy),
-    # }
-    return proxy
+# iplist = []
+# with open("ip.txt") as f:
+#     iplist = f.readlines()
+#
+#
+# # 获取ip代理
+# def getip():
+#     proxy = iplist[random.randint(0, len(iplist) - 1)]
+#     proxy = proxy.strip()  # 去除换行符和空格
+#     # proxies={
+#     #     'http':'http://'+str(proxy),
+#     #     #'https':'https://'+str(proxy),
+#     # }
+#     return proxy
 
 
 # 连接MongoDB数据库
-client = MongoClient('mongodb://192.168.1.10:27017/')
+client = MongoClient('mongodb://192.168.1.11:27017/')
 
 # MongoDB 中可存在多个数据库，根据数据库名称获取数据库对象
 db = client.mydatabase
@@ -68,24 +71,46 @@ movies_info={
 
 
 def scrolled_to_bottom(driver):
-    # 获取页面总高度
-    last_height = driver.execute_script("return document.body.scrollHeight")
+    # # 获取页面总高度
+    # last_height = driver.execute_script("return document.body.scrollHeight")
+    #
+    # while True:
+    #     # 模拟滚动到底部
+    #     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    #
+    #     # 等待加载更多内容
+    #     time.sleep(random.uniform(3, 5))  # 根据实际情况调整等待时间
+    #
+    #     # 计算新的页面高度
+    #     new_height = driver.execute_script("return document.body.scrollHeight")
+    #
+    #     # 检查是否已滚动到底部
+    #     if new_height == last_height:
+    #         break
+    #     last_height = new_height
+
+    # 初始加载的元素数量
+    initial_count = len(driver.find_elements(By.CSS_SELECTOR, ".movie-list-item.playable.unwatched"))
 
     while True:
         # 模拟滚动到底部
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
 
-        # 等待加载更多内容
-        time.sleep(1)  # 根据实际情况调整等待时间
-
-        # 计算新的页面高度
-        new_height = driver.execute_script("return document.body.scrollHeight")
-
-        # 检查是否已滚动到底部
-        if new_height == last_height:
+        try:
+            # 等待新元素加载
+            WebDriverWait(driver, 10).until(
+                lambda driver: len(
+                    driver.find_elements(By.CSS_SELECTOR, ".movie-list-item.playable.unwatched")) > initial_count
+            )
+        except TimeoutException:
+            # 如果超时，认为没有更多内容加载
             break
-        last_height = new_height
 
+        # 更新元素数量
+        initial_count = len(driver.find_elements(By.CSS_SELECTOR, ".movie-list-item.playable.unwatched"))
+
+    print("All content loaded.")
+    driver.execute_script("window.scrollTo(0, 0);")
 
 def tranInfodist(infos):
     infos_dist = {}
@@ -163,6 +188,7 @@ def get_movie_url(driver, movie_type):
         type.click()
         time.sleep(2)
         # scrolled_to_bottom(driver)
+
         movie_url = driver.find_elements(By.CSS_SELECTOR,
                                          "#content > div > div.article > div.movie-list-panel.pictext > * > div > div > div.movie-name > span.movie-name-text > a")
         get_movie_info(driver, movie_url)
@@ -195,45 +221,62 @@ def login(driver):
     get_captcha_button.click()
 
     # 等待验证码图片加载完成
-    frame = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, "tcaptcha_iframe_dy")))
+    frame = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "tcaptcha_iframe_dy")))
     driver.switch_to.frame(frame)
+    while True:
+        try:
+            img = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "slideBg")))
+            # 获取元素的style属性
+            style = img.get_attribute("style")
+            if not style:
+                time.sleep(0.5)  # 等待 0.5 秒后重试
+                style = img.get_attribute("style")
 
-    img = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, "slideBg")))
-    # 获取元素的style属性
-    style = img.get_attribute("style")
-    if not style:
-        time.sleep(0.5)  # 等待 0.5 秒后重试
-        style = img.get_attribute("style")
+            # 从style属性中提取背景图片的URL
+            img_url = style.split('url("')[1].split('")')[0]
+            # 下载验证码图片
+            img_data = requests.get(img_url).content
+            with open("captcha.jpg", "wb") as f:
+                f.write(img_data)
 
-    # 从style属性中提取背景图片的URL
-    img_url = style.split('url("')[1].split('")')[0]
-    # 下载验证码图片
-    img_data = requests.get(img_url).content
-    with open("captcha.jpg", "wb") as f:
-        f.write(img_data)
+            # 计算滑块的位置
+            x, _ = get_slider_captcha_contour("captcha.jpg")
+            slider = driver.find_element(By.CLASS_NAME, "tc-slider-normal")
+            ActionChains(driver).drag_and_drop_by_offset(slider, x / 2 - 30, 0).perform()
 
-    # 计算滑块的位置
-    x, _ = get_slider_captcha_contour("captcha.jpg")
-    slider = driver.find_element(By.CLASS_NAME, "tc-slider-normal")
-    ActionChains(driver).drag_and_drop_by_offset(slider, x / 2 - 30, 0).perform()
 
-    captcha = input("请输入验证码：")
+            # 等待验证结果
+            time.sleep(5)
+            success_text = driver.find_element(By.ID, "statusSuccess").text
+            if success_text:
+                print("登录成功")
+                break
+            else:
+                time.sleep(5)
+                img_refresh = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#reload > img")))
+                img_refresh.click()
+        except Exception as e:
+            print(e)
+
+    driver.switch_to.default_content()
     captcha_input = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, "code")))
+    captcha = input("请输入验证码：")
     captcha_input.send_keys(captcha)
-
     # 点击登录按钮
     login_button = driver.find_element(By.CSS_SELECTOR,
                                        "#account > div.login-wrap > div.login-right > div > div.account-tabcon-start > div.account-form > div.account-form-field-submit > a")
     login_button.click()
 
-    # cookies = driver.get_cookies()
-    # cookie=''.join([f"{cookie['name']}={cookie['value']};" for cookie in cookies])
-    # print(cookie)
+    cookies = driver.get_cookies()
+    cookie = ''.join([f"{cookie['name']}={cookie['value']};" for cookie in cookies])
+    print(cookie)
 
-    # 关闭新打开的标签页
-    driver.close()
-    # 切换回主标签页
-    driver.switch_to.window(driver.window_handles[0])
+    driver.back()
+    return cookie
+    # # 关闭新打开的标签页
+    # driver.close()
+    # # 切换回主标签页
+    # driver.switch_to.window(driver.window_handles[0])
 
 
 def main():
@@ -250,20 +293,17 @@ def main():
     options.add_argument(
         'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36')
 
-    # 获取代理IP
-    proxy_ip = getip()
-    print(f"Using proxy: {proxy_ip}")
-
     # 配置代理
-    options.add_argument('--proxy-server=http://' + proxy_ip)
+    # options.add_argument('--proxy-server=http://' + proxy)
 
     # 启动Chrome浏览器
     driver = webdriver.Chrome(chrome_options=options)
     driver.get(url)
-    login(driver)
+    # login(driver)
     movie_type = driver.find_elements(By.CSS_SELECTOR, "a[href^='/typerank?type_name=']")
     get_movie_url(driver, movie_type)
     input('等待回车键结束程序')
+
 
 
 if __name__ == '__main__':

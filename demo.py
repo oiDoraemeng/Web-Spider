@@ -49,6 +49,6 @@ proxies = {
 start = int(round(time.time() * 1000))
 resp = requests.get(targetUrl, proxies=proxies,timeout=10)
 costTime = int(round(time.time() * 1000)) - start
-print resp.text
+print (resp.text)
 print("耗时：" + str(costTime) + "ms")
 
